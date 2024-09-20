@@ -1,0 +1,56 @@
+x-logging: &default-logging
+  driver: loki
+  options:
+    loki-url: 'http://localhost:3100/api/prom/push'
+    loki-pipeline-stages: |
+      # - regex:
+      #     expression: '^(?P<date>[^\t]+)\t(?P<time>[^\t]+)\t(?P<remaining_log>.*)'
+      # - template:
+      #     source: timestamp
+      #     template: '{{ .date }} {{ .time }}'
+      # - labels:
+      #     timestamp:
+      # - timestamp:
+      #     source: timestamp
+      #     format: "2006-01-02 15:04:05"
+      # - output:
+      #     source: remaining_log
+      - regex:
+          expression: "^(?P<date>[^\t]+)\t(?P<time>[^\t]+)\t(?P<x_edge_location>[^\t]+)\t(?P<sc_bytes>[^\t]+)\t(?P<c_ip>[^\t]+)\t(?P<remaining_log>.*)"
+          # expression: '(?P<ts>\d{4}-\d{2}-\d{2}\t\d{2}:\d{2}:\d{2})\t(?P<field1>[^\t]+)\t(?P<field2>[^\t]+)'
+      # - template:
+      #     source: timestamp
+      #     template: '{{ .date }} {{ .time }}'
+      # - timestamp:
+      #     source: ts
+      #     format: "2006-01-02 15:04:05"
+      #     # location: UTC
+      - labels:
+          x_edge_location:
+          c_ip:
+      - output:
+          source: remaining_log
+
+version: "3.4"
+
+services:
+  loki:
+    image: grafana/loki:2.9.2
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./etc/grafana/:/etc/grafana/provisioning/datasources
+    depends_on:
+      - loki
+    logging: *default-logging
+
+
+  demo-log:
+    image: demo-log
+    logging: *default-logging
