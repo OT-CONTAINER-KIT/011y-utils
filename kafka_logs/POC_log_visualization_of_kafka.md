@@ -8,6 +8,9 @@
 
 <details>
 <summary> docker-compose.yaml </summary>
+
+  ```shell
+  
 # This docker-compose is only to get started with Conduktor.
 # It is starting Conduktor, a Redpanda cluster (Kafka), and a fake app to generate traffic.
 # Go to http://localhost:8080 when started
@@ -187,4 +190,192 @@ volumes:
   pg_data: {}
   conduktor_data: {}
   redpanda-0: {}
+```
+
 </details>
+
+## Bash script for promtail setup 
+
+<details>
+<summary> promtail.sh </summary>
+
+  ```shell
+# Change localhost to Loki server IP
+#!/bin/bash
+
+sudo apt-get update
+sudo apt install unzip -y
+curl -s https://api.github.com/repos/grafana/loki/releases/latest | grep browser_download_url |  cut -d '"' -f 4 | grep promtail-linux-amd64.zip | wget -i -
+
+unzip promtail-linux-amd64.zip
+
+sudo mv promtail-linux-amd64 /usr/local/bin/promtail
+
+promtail --version
+
+sudo tee /etc/promtail-local-config.yaml << EOF
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://52.91.219.126:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: system
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: kafkalogs
+      __path__: /var/lib/docker/containers/d6d232b2312f594dcc6b191089ac8f3740897b252e7fd2b04be6a1234d7bbf83/d6d232b2312f594dcc6b191089ac8f3740897b252e7fd2b04be6a1234d7bbf83-json.log
+EOF
+
+sudo tee /etc/systemd/system/promtail.service <<EOF
+[Unit]
+Description=Promtail service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/promtail --config.file=/etc/promtail-local-config.yaml
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd to recognize the new service, start and enable Promtail service
+sudo systemctl daemon-reload
+sudo systemctl start promtail.service
+sudo systemctl enable promtail.service
+
+echo "Promtail installation and service setup completed."
+
+```
+
+</details>
+
+## Bash script for Grafana setup 
+
+<details> 
+<summary> grafana.sh </summary>
+
+```shell
+#!/bin/bash
+
+
+sudo apt-get update
+
+sudo apt-get install -y apt-transport-https
+sudo apt-get install -y software-properties-common wget
+sudo wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
+echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list
+
+sudo apt-get update
+sudo apt-get install grafana -y
+sudo /bin/systemctl enable grafana-server
+sudo /bin/systemctl restart grafana-server
+sudo /bin/systemctl status grafana-server
+echo "Grafana installation completed"
+
+```
+</details>
+
+## Bash script for loki 
+
+<details> 
+<summary> loki.sh </summary>
+
+```shell
+#!/bin/bash
+
+# Update package lists
+sudo apt-get update
+
+# Fetch the latest Loki version
+LOKI_VERSION=$(curl -s "https://api.github.com/repos/grafana/loki/releases/latest" | grep -Po '"tag_name": "v\K[0-9.]+')
+
+# Create Loki directory
+sudo mkdir -p /opt/loki
+
+# Download Loki and the configuration file
+sudo wget -qO /opt/loki/loki.gz "https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-amd64.zip"
+sudo gunzip /opt/loki/loki.gz
+sudo chmod a+x /opt/loki/loki
+
+# Create a symlink to /usr/local/bin for easier execution
+sudo ln -s /opt/loki/loki /usr/local/bin/loki
+
+# Download Loki's local config file
+sudo wget -qO /opt/loki/loki-local-config.yaml "https://raw.githubusercontent.com/grafana/loki/v${LOKI_VERSION}/cmd/loki/loki-local-config.yaml"
+
+# Create a systemd service for Loki
+sudo tee /etc/systemd/system/loki.service > /dev/null <<EOF
+[Unit]
+Description=Loki log aggregation system
+After=network.target
+
+[Service]
+ExecStart=/opt/loki/loki -config.file=/opt/loki/loki-local-config.yaml
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd daemon to recognize the new service
+sudo systemctl daemon-reload
+
+# Enable Loki service to start on boot
+sudo systemctl enable loki.service
+
+# Start Loki service
+sudo systemctl start loki.service
+
+# Check the status of Loki service
+sudo systemctl status loki.service
+```
+</details>
+
+## Visualizing the kafka logs 
+
+For visualizing the logs of kafka on grafana you need to make some configuration changes in the ```promtail.sh``` file. 
+
+In clients attribute mention the URL for loki server. 
+
+``` 
+clients:
+  - url: <public_ip_address_of loki_server:port>/loki/api/v1/push
+```
+
+In scrape_configs mention the job name and path of your kafka container logs.
+
+```
+scrape_configs:
+- job_name: system
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: <job_name>
+      __path__: <path_of_kafka_containers_logs>
+EOF
+```
+
+- Run the scripts. 
+
+![image](https://github.com/user-attachments/assets/4c781c67-746c-4d04-b97d-c9dafd357178)
+
+
+- Once all the services are up login to your Grafana UI. 
+- In Datasource add Loki as datasource and mention the URL of Loki server, in my case its on the same server as the grafana so I have mentione ``` http://localhost:3100 ```.
+- After adding the datasource Save and Test the configurations. 
+- Once its tested, Create a Dashboard and add the datasource you just configured. 
+- In Dashboard configure the Job Name. 
+- For logs choose Table as the visualization and now you can see the kafka container logs on the Dashboard. 
+
+
