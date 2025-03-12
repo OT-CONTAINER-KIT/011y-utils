@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  grafana:
+    image: grafana/grafana:latest  
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/grafana-data
+    networks:
+      - o11y-net
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+volumes:
+  grafana-storage:
+    driver: local
+    driver_opts:
+      type: none
+      device: /data/grafana/grafana-storage
+      o: bind
+
+networks:
+  o11y-net:
+    driver: bridge
