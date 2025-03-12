@@ -44,4 +44,4 @@ echo "Please log out and log back in or restart your system to apply user group 
 
 echo "Create dir"
 mdkir -p /data/grafana/grafana-storage
-mkdir grafana
+mkdir ~/grafana
